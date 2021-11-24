@@ -1,6 +1,10 @@
+ifndef scada_dir
+scada_dir := .
+endif
+
 build:
 	@echo "build containers"
 
 container_setup:
 	@echo "Setup contaienr for $(target)"
-	@ln -sf docker-compose-$(target).xml docker-compose.xml
+	ln -f $(scada_dir)/docker-compose-$(target).yml $(scada_dir)/docker-compose.yml
