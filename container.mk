@@ -10,11 +10,20 @@ __check_defined = $(if $(value $1),, \
 build:
 	@echo "build containers"
 	@echo "workdir:" $(workdir)
+	@cd $(workdir) && docker-compose build
 
 setup:
 	$(call check_defined, target)
-
 	$(info Setup container for $(target) environment)
-	$(info linking docker-compose-$(target).xml)
-	
-	@cd $(workdir) && ln -sf docker-compose-$(target).yml docker-compose.yml
+
+start:
+	@cd $(workdir) && docker-compose up -d
+
+stop:
+	@cd $(workdir) && docker-compose stop
+
+restart:
+	@cd $(workdir) && docker-compose restart
+
+down:
+	@cd $(workdir) && docker-compose down -v

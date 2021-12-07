@@ -1,0 +1,108 @@
+{
+  "name": "",
+  "tagType": "Provider",
+  "tags": [
+    {
+      "name": "Check Weigh Data",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "valueSource": "opc",
+          "opcItemPath": "ns\u003d1;s\u003d[Bowery SCADA Simulator]Check_Weigh_Captured_Date_Time/node",
+          "dataType": "DateTime",
+          "name": "Check_Weigh_Captured_Date_Time",
+          "tagType": "AtomicTag",
+          "opcServer": "Ignition OPC UA Server"
+        },
+        {
+          "valueSource": "opc",
+          "opcItemPath": "ns\u003d1;s\u003d[Bowery SCADA Simulator]Prototype_Check_Weigh_Info/node",
+          "dataType": "String",
+          "name": "Prototype_Check_Weigh_Info",
+          "tagType": "AtomicTag",
+          "opcServer": "Ignition OPC UA Server"
+        },
+        {
+          "valueSource": "opc",
+          "opcItemPath": "ns\u003d1;s\u003d[Bowery SCADA Simulator]Check_Weigh_Captured_Weight/node",
+          "dataType": "Int8",
+          "name": "Check_Weigh_Captured_Weight",
+          "tagType": "AtomicTag",
+          "opcServer": "Ignition OPC UA Server"
+        }
+      ]
+    },
+    {
+      "name": "Bin Routing",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "valueSource": "opc",
+          "opcItemPath": "ns\u003d1;s\u003d[Bowery SCADA Simulator]Bin_Routing_From_OS_Desired_Destination/node",
+          "dataType": "String",
+          "name": "Bin_Routing_From_OS_Desired_Destination",
+          "tagType": "AtomicTag",
+          "opcServer": "Ignition OPC UA Server"
+        },
+        {
+          "valueSource": "opc",
+          "opcItemPath": "ns\u003d1;s\u003d[Bowery SCADA Simulator]Bin_Routing_From_OS_Destination_ID/node",
+          "dataType": "Int4",
+          "name": "Bin_Routing_From_OS_Destination_ID",
+          "tagType": "AtomicTag",
+          "opcServer": "Ignition OPC UA Server"
+        },
+        {
+          "valueSource": "opc",
+          "opcItemPath": "ns\u003d1;s\u003d[Bowery SCADA Simulator]Bin_Routing_From_OS_Data_Present/node",
+          "dataType": "Int4",
+          "name": "Bin_Routing_From_OS_Data_Present",
+          "tagType": "AtomicTag",
+          "opcServer": "Ignition OPC UA Server"
+        }
+      ]
+    },
+    {
+      "name": "Bin Data",
+      "tagType": "Folder",
+      "tags": [
+        {
+          "valueSource": "opc",
+          "opcItemPath": "ns\u003d1;s\u003d[Bowery SCADA Simulator]Bin_Destination/node",
+          "dataType": "String",
+          "name": "Bin_Destination",
+          "tagType": "AtomicTag",
+          "opcServer": "Ignition OPC UA Server"
+        },
+        {
+          "valueSource": "opc",
+          "opcItemPath": "ns\u003d1;s\u003d[Bowery SCADA Simulator]Bin_Kickout_Reason/node",
+          "dataType": "String",
+          "name": "Bin_Kickout_Reason",
+          "tagType": "AtomicTag",
+          "opcServer": "Ignition OPC UA Server"
+        },
+        {
+          "valueSource": "opc",
+          "opcItemPath": "ns\u003d1;s\u003d[Bowery SCADA Simulator]ACC/node",
+          "dataType": "Int4",
+          "name": "ACC",
+          "tagType": "AtomicTag",
+          "opcServer": "Ignition OPC UA Server"
+        },
+        {
+          "valueSource": "opc",
+          "opcItemPath": "ns\u003d1;s\u003d[Bowery SCADA Simulator]Parsed_Bin_Label/node",
+          "dataType": "String",
+          "name": "Parsed_Bin_Label",
+          "tagType": "AtomicTag",
+          "opcServer": "Ignition OPC UA Server"
+        }
+      ]
+    },
+    {
+      "name": "_types_",
+      "tagType": "Folder"
+    }
+  ]
+}
