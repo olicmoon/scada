@@ -1,0 +1,8 @@
+.vim/
+.project
+.settings/
+.classpath
+scada-build/target/
+scada-gateway/target/
+scada-gateway/bin/
+*.modl

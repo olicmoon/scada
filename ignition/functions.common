@@ -1,0 +1,96 @@
+#!/bin/bash
+
+SCRIPT_VERSION="1.0"
+port="8088"
+PROVISION_CACHE="data/bowery_provisioning.cache"
+PROVISION_LOG="data/bowery_provisioning.log"
+STATUS_PROVISIONED="PROVISIONED"
+
+# usage: health_check DELAY_SECS TARGET|DETAILS
+#    ie: health_check 59
+#    ie: health_check 59 RUNNING|COMMISSIONING
+health_check() {
+    local delay="$1"
+    local target="$2"
+    local details="null"
+
+    if [[ "${target}" == *"|"* ]]; then
+        details=$(printf ${target} | cut -d \| -f 2)
+        target=$(printf ${target} | cut -d \| -f 1)
+    fi
+
+    # Wait for a short period for the commissioning servlet to come alive
+    for ((i=${delay};i>-1;i--)); do
+        raw_json=$(curl -s --max-time 2 -f http://localhost:${port}/StatusPing || true)
+        state_value=$(echo ${raw_json} | jq -r '.["state"]')
+        details_value=$(echo ${raw_json} | jq -r '.["details"]')
+        if [ "${state_value}" == "${target}" -a "${details_value}" == "${details}" ]; then
+            break
+        fi
+        sleep 1
+    done
+    if [ "$i" -le -1 ]; then
+        echo "init     | Commissioning helper function run delay (${delay}) exceeded, exiting."
+        exit -1
+    fi
+}
+
+# usage: provision_store IGNITION_PATH VERSION TYPE STATUS 
+#    ie: provision_store /usr/local/share/ignition 1.0 Docker PROVISIONING
+provision_store() {
+    local path="$1/${PROVISION_CACHE}"
+    local version="$2"
+    local type="$3"
+    local status="$4"
+    local jstr=$( jq -n \
+        --arg arg1 "$version" \
+        --arg arg2 "$type" \
+        --arg arg3 "$status" \
+        '{version: $arg1, type: $arg2, status: $arg3}' )
+    echo ${jstr} > ${path}
+}
+
+# usage: provision_check_status IGNITION_PATH
+#    ie: provision_check_status /usr/local/share/ignition >> returns "PROVISIONING"
+provision_check_status() {
+    local path="$1/${PROVISION_CACHE}"
+
+    if [ ! -f ${path} ]; then
+        echo "UNKNOWN"
+    else
+        local status=$( cat ${path} | jq -r '.["status"]' )
+        echo ${status}
+    fi
+}
+
+# usage: perform_provision IGNITION_PATH PROVISION_TYPE
+#    ie: perform_provision /usr/local/share/ignition DEV
+#
+# Run provisioning scripts
+perform_provision() {
+    local ignition_path="$1"
+    local provision_type="$2"
+    local gwcmd="${ignition_path}/gwcmd.sh"
+    local logfile="${ignition_path}/${PROVISION_LOG}"
+
+    if [ -f ${logfile} ]; then
+        rm ${logfile}
+    fi
+
+    # Wait Ignition to boot up property so the internal database (config.idb)
+    # is properly generated
+    health_check 300 "RUNNING"
+    # gateway status
+    echo $( ${gwcmd} -i ) >> ${logfile}
+
+    target_db="${ignition_path}/data/db/config.idb"
+    register-modules.sh false "${target_db}"
+    register-jdbc.sh false "${target_db}"
+    register-devices.sh "${target_db}" "F2"
+    register-tagproviders.sh "${target_db}"
+    register-datasources.sh "${target_db}" "BinConvData" "ignition-db:5432/ignition_dev" "ignition_dev" "ignition_dev"
+
+    # Restart Ignition gateway to apply changes
+    echo $( ${gwcmd} -r ) >> ${logfile}
+    provision_store ${ignition_path} ${SCRIPT_VERSION} ${provision_type} "${STATUS_PROVISIONED}"
+}
