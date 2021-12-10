@@ -133,6 +133,10 @@ RUN mkdir ${IGNITION_INSTALL_USERHOME} && \
 RUN mkdir /app && \
     chown ${IGNITION_UID}:${IGNITION_GID} /app
 
+COPY requirements.txt /app
+RUN pip install -r /app/requirements.txt
+
+
 # Copy Ignition Installation from Build Image
 COPY --chown=${IGNITION_UID}:${IGNITION_GID} --from=downloader /root/ignition ${IGNITION_INSTALL_LOCATION}
 COPY --chown=${IGNITION_UID}:${IGNITION_GID} --from=downloader /var/lib/ignition /var/lib/ignition

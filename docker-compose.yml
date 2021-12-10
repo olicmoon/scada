@@ -1,0 +1,52 @@
+version: '3.1'
+services:
+  gateway:
+    build:
+      context: ignition
+      dockerfile: Dockerfile
+    ports:
+      - "8088:8088"
+      - "8060:8060"
+      - "9888:9888"
+    stop_grace_period: 30s
+    volumes:
+      # - ./ignition/gateway_backup.gwbk:/restore.gwbk
+      - ./ignition/gateway_data:/data
+      - ./ignition/modules:/modules
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
+    env_file: ./ignition/.env.dev
+    links:
+      - ignition-db
+
+  ignition-db:
+    image: postgres:12
+    ports:
+      # Note that the 5432 port doesn't need to be published here for the gateway container to connect, 
+      # only for external connectivity to the database.
+      - "5432:5432"
+    volumes:
+     - ./ignition-db/db_data:/var/lib/postgresql/data
+     - ./ignition-db/db-init:/docker-entrypoint-initdb.d
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
+    environment:
+      # See https://hub.docker.com/_/postgres/ for more information
+      POSTGRES_DB: ignition_dev
+      POSTGRES_USER: ignition_dev
+      POSTGRES_PASSWORD: ignition_dev
+
+# secrets:
+#   gateway-password:
+#     file: ./ignition/DEV_GATEWAY_PASSWORD
+
+# volumes:
+#   gateway_data:
+#   db_data:
+  # gateway_backup.gwbk:
