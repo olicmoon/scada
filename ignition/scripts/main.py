@@ -2,42 +2,16 @@
 
 import os, time, shutil, enum
 import json
-import xmltodict
-import re
 import subprocess
 import requests
-import sqlite3
 
 from threading import Thread
 from typing import Optional, Tuple
 
-IGNITION_INSTALL_LOCATION = os.getenv('IGNITION_INSTALL_LOCATION', None)
-IGNITION_UID = 999
-IGNITION_GID = 999
-IGNITION_PORT = 8088
-DATA_VOLUME_PATH = '/data'
-PROVISION_CACHE_PATH ='data/bowery_provisioning.cache'
-
-if IGNITION_INSTALL_LOCATION is None:
-    raise ValueError("Undefined env: IGNITION_INSTALL_LOCATION")
-
-INIT_FILE = "/usr/local/share/ignition/data/init.properties"
-XML_FILE = f'{IGNITION_INSTALL_LOCATION}/data/gateway.xml_clean'
-
-
-LOG_TAG = 'init     |'
-class logger:
-    @staticmethod
-    def info(s):
-        print(f'{LOG_TAG} INFO: {s}')
-
-    @staticmethod
-    def warn(s):
-        print(f'{LOG_TAG} WARN: {s}')
-
-    @staticmethod
-    def error(s):
-        print(f'{LOG_TAG} ERROR: {s}')
+from common import logger
+from common import IGNITION_VERSION, IGNITION_INSTALL_LOCATION, IGNITION_PORT
+from common import DATA_VOLUME_PATH
+import provision
 
 def build_ignition_cmd():
     command = "./ignition-gateway"
@@ -117,7 +91,7 @@ def perform_commissioning(auth_password: str,
         activation_token: Optional[str] = None) -> bool:
     base_url = f'http://localhost:{IGNITION_PORT}'
     bootstrap_url = f'{base_url}/bootstrap'
-    get_url = f'{base_url}/get-step'
+    # get_url = f'{base_url}/get-step'
     post_url = f'{base_url}/post-step'
 
     r = requests.get(bootstrap_url)
@@ -229,158 +203,11 @@ def perform_commissioning(auth_password: str,
 
     return True
 
-class ProvisionStatus(enum.Enum):
-    UNKNOWN = 'UNKNOWN'
-    PROVISIONED = 'PROVISIONED'
-
-class DeploymentType(enum.Enum):
-    DEV = 'DEV'
-    STAGING = 'STAGING'
-    PROD = 'PROD'
-
-def store_provision_cache(deployment: DeploymentType, status: ProvisionStatus):
-    cache = dict()
-    cache['deployment'] = deployment.value
-    cache['status'] = status.value
-
-    cache_file = f'{IGNITION_INSTALL_LOCATION}/{PROVISION_CACHE_PATH}'
-    if os.path.exists(cache_file):
-        os.remove(cache_file)
-
-    with open(cache_file, 'w') as fp:
-        json.dump(cache, fp)
-        fp.flush()
-
-def read_provisioning_status() -> ProvisionStatus:
-    cache_file = f'{IGNITION_INSTALL_LOCATION}/{PROVISION_CACHE_PATH}'
-    if os.path.exists(cache_file):
-        with open(cache_file, 'r') as fp:
-            cache = json.load(fp)
-            if 'status' in cache:
-                return ProvisionStatus(cache['status'])
-
-    return ProvisionStatus.UNKNOWN
-
-def register_modules(db_path: str) -> bool:
-    db_conn = None
-    try:
-        db_conn = sqlite3.connect(db_path)
-
-        module_dir = '/modules'
-        for _, _, files in os.walk(module_dir):
-            for fname in files:
-                if not fname.endswith('.modl'):
-                    continue
-
-                module_path = f'{module_dir}/{fname}'
-                module_install_path = f'{IGNITION_INSTALL_LOCATION}/user-lib/modules/{fname}'
-                shutil.copy(module_path, module_install_path)
-                os.chown(module_install_path, IGNITION_UID, IGNITION_GID)
-                logger.info(f'Installing {module_path}')
-
-                module_info = xmltodict.parse(os.popen(f'unzip -qq -c "{module_path}" module.xml').read())
-                module_id = module_info['modules']['module']['id']
-
-                license_crc32 = os.popen(f'unzip -qq -c "{module_path}" license.html \
-                        | gzip -c | tail -c8 | od -t u4 -N 4 -A n | cut -c 2-').read().strip()
-
-                keytool_path = os.popen('which keytool').read().strip()
-                cert_info = os.popen(f'unzip -qq -c {module_path} certificates.p7b | \
-                        {keytool_path} -printcert -v | head -n 9').read().strip()
-
-                subject_name = ''
-                thumbprint = ''
-                fingerprints_line = 0
-                linenum = 0
-                for line in cert_info.split('\n'):
-                    linenum = linenum + 1
-                    # print(f'[{linenum}] {line}')
-                    if 'Owner' in line:
-                        m = re.search('CN=(.+?),', line)
-                        subject_name = m.group(1)
-
-                    if 'Certificate fingerprints' in line:
-                        fingerprints_line = linenum
-
-                    if fingerprints_line > 0 and 'SHA1:' in line:
-                        arr = line.split('SHA1: ')
-                        if len(arr) == 2:
-                            thumbprint = arr[1].replace(':', '').lower()
-
-                logger.info(f'       Module: {module_id} {fname}')
-                logger.info(f'   Thumbprint: {thumbprint}')
-                logger.info(f' Subject Name: {subject_name}')
-                logger.info(f'License crc32: {license_crc32}')
-
-                cur = db_conn.cursor()
-
-                cur.execute(f'SELECT 1 FROM CERTIFICATES WHERE lower(hex(THUMBPRINT)) = "{thumbprint}"')
-                rows = cur.fetchall()
-                thumbprint_already_exists = len(rows) != 0
-
-                if not thumbprint_already_exists:
-                    cur.execute('SELECT COALESCE(MAX(CERTIFICATES_ID)+1,1) FROM CERTIFICATES')
-                    rows = cur.fetchall()
-                    cert_id = rows[0][0]
-                    logger.info(f'Insert thumbprint {cert_id}')
-                    cur.executescript(f'INSERT INTO CERTIFICATES (CERTIFICATES_ID, THUMBPRINT, SUBJECTNAME) \
-                            VALUES ({cert_id}, x\'{thumbprint}\', "{subject_name}"); \
-                            UPDATE SEQUENCES SET val={cert_id} WHERE name="CERTIFICATES_SEQ"')
-
-                cur.execute(f'SELECT 1 FROM EULAS WHERE MODULEID="{module_id}" AND CRC="{license_crc32}"')
-                rows = cur.fetchall()
-                module_id_already_exists = len(rows) != 0
-                if not module_id_already_exists:
-                    cur.execute('SELECT COALESCE(MAX(EULAS_ID)+1,1) FROM EULAS')
-                    rows = cur.fetchall()
-                    eula_id = rows[0][0]
-
-                    logger.info(f'Accepting EULA id:{module_id} {eula_id}')
-                    cur.executescript(f'INSERT INTO EULAS (EULAS_ID, MODULEID, CRC) \
-                            VALUES ({eula_id}, "{module_id}", "{license_crc32}"); \
-                            UPDATE SEQUENCES SET val={eula_id} WHERE name="EULAS_SEQ"')
-
-                cur.close()
-
-    except Exception as e:
-        logger.error(f'Failed to install modules {db_path}: {e}')
-        return False
-    finally:
-        if db_conn:
-            db_conn.commit()
-            db_conn.close()
-
-    return True
-
-def perform_provisioning(deployment: DeploymentType) -> bool:
-    status = read_provisioning_status()
-    if status != ProvisionStatus.PROVISIONED:
-        logger.info('Start provisioning')
-        db_path = f'{IGNITION_INSTALL_LOCATION}/data/db/config.idb'
-        gwcmd_path = f'{IGNITION_INSTALL_LOCATION}/gwcmd.sh'
-        if not register_modules(db_path):
-            return False
-
-        # Restart ignition gateway to apply changes
-        store_provision_cache(deployment, ProvisionStatus.PROVISIONED)
-        os.system(f'{gwcmd_path} -r')
-        logger.info('Finish provisioning')
-        return True
-
-
-command = build_ignition_cmd()
-ignition_version = os.popen(f'cat "{IGNITION_INSTALL_LOCATION}/lib/install-info.txt" | grep gateway.version | cut -d = -f 2').read().strip()
-
-logger.info(f'Ignition version: {ignition_version}')
+logger.info(f'Ignition version: {IGNITION_VERSION}')
 
 # TODO: modify databases
 
 prepare_data_volume()
-
-proc = subprocess.Popen(command.split(' '))
-
-def main_thread_fn(proc: subprocess.Popen):
-    proc.wait()
 
 def commisioning_thread_fn():
     if health_check(desc='commisioning', target= ('RUNNING', 'COMMISSIONING'), giveup = ('RUNNING', None)):
@@ -388,11 +215,8 @@ def commisioning_thread_fn():
 
 def provisioning_thread_fn():
     if health_check(desc='provisioning', target= ('RUNNING', None), giveup = None):
-        res = perform_provisioning(deployment=DeploymentType.DEV)
+        res = provision.perform_provisioning(deployment=provision.DeploymentType.DEV)
         logger.info(f'Provisioning completed res: {res}')
-
-main_thread = Thread(target= main_thread_fn, args = (proc, ))
-main_thread.start()
 
 commisioning_thread = Thread(target= commisioning_thread_fn)
 commisioning_thread.start()
@@ -400,7 +224,8 @@ commisioning_thread.start()
 provisioning_thread = Thread(target= provisioning_thread_fn)
 provisioning_thread.start()
 
-time.sleep(10)
-logger.info('KILL server after 10 seconds')
-# proc.kill()
+command = build_ignition_cmd()
+proc = subprocess.Popen(command.split(' '))
+proc.wait()
 
+logger.warn(f'end of program')

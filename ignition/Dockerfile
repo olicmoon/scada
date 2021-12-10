@@ -130,11 +130,11 @@ RUN mkdir ${IGNITION_INSTALL_USERHOME} && \
     (getent passwd ${IGNITION_UID} > /dev/null 2>&1 || useradd -r -d ${IGNITION_INSTALL_USERHOME} -u ${IGNITION_UID} -g ${IGNITION_GID} ignition) && \
     chown ${IGNITION_UID}:${IGNITION_GID} ${IGNITION_INSTALL_USERHOME}
 
-RUN mkdir /app && \
-    chown ${IGNITION_UID}:${IGNITION_GID} /app
+RUN mkdir /scripts && \
+    chown ${IGNITION_UID}:${IGNITION_GID} /scripts
 
-COPY requirements.txt /app
-RUN pip install -r /app/requirements.txt
+COPY requirements.txt /scripts
+RUN pip install -r /scripts/requirements.txt
 
 
 # Copy Ignition Installation from Build Image
@@ -158,10 +158,10 @@ WORKDIR ${IGNITION_INSTALL_LOCATION}
 ENV PATH="${IGNITION_INSTALL_LOCATION}/lib/runtime/jre/bin:${PATH}"
 
 # Copy in Entrypoint and helper scripts
-COPY provision/*.py /app
+COPY scripts/*.py /scripts
 
 STOPSIGNAL SIGINT
 
 # Prepare Execution Settings
-ENTRYPOINT [ "tini", "-g", "--", "python3", "-u", "/app/main.py" ]
+ENTRYPOINT [ "tini", "-g", "--", "python3", "-u", "/scripts/main.py" ]
 CMD [ "./ignition-gateway" ]
