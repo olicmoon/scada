@@ -122,15 +122,15 @@ def register_modules(db_path: str) -> bool:
 
                 cur.close()
 
+        return True
     except Exception as e:
-        logger.error(f'Failed to install modules {db_path}: {e}')
+        logger.error(f'Failed to register modules {db_path}: {e}')
+        logger.error(traceback.print_exc())
         return False
     finally:
         if db_conn:
             db_conn.commit()
             db_conn.close()
-
-    return True
 
 def register_devices(db_path: str) -> bool:
     db_config_path = f'{CONFIG_VOLUME_PATH}/db/devices'
@@ -151,9 +151,14 @@ def register_devices(db_path: str) -> bool:
 
                 with open(f'{db_config_path}/{file}', 'r') as fp:
                     cur = db_conn.cursor()
-                    cur.execute(f'drop table {tbl_name}')
+                    cur.execute(f'SELECT EXISTS (SELECT * FROM sqlite_master WHERE type="table" and name="{tbl_name}")')
+                    row = cur.fetchone()
+                    if row[0] == 1:
+                        cur.execute(f'drop table {tbl_name}')
                     cur.executescript(''.join(fp.readlines()))
                     db_conn.commit()
+
+        return True
     except Exception as e:
         logger.error(f'Failed to register devices: {e}')
         logger.error(traceback.print_exc())
@@ -162,7 +167,7 @@ def register_devices(db_path: str) -> bool:
         if db_conn:
             db_conn.close()
 
-def register_tagprovidier(db_path: str, name: str, uuid: str, desc: str,
+def register_tagprovider(db_path: str, name: str, uuid: str, desc: str,
         enabled: bool = True, typeid:str = "STANDARD") -> bool:
     db_conn = None
     try:
@@ -181,51 +186,56 @@ def register_tagprovidier(db_path: str, name: str, uuid: str, desc: str,
                     VALUES ({next_id}, "{name}", "{uuid}", "{desc}", {enabled}, "{typeid}", 0)')
         else:
             logger.info("Skip registering tag provider ${name} (already exists)")
+
+        return True
     except Exception as e:
-        logger.error(f'Failed to install modules {db_path}: {e}')
+        logger.error(f'Failed to register tag provider {db_path}: {e}')
+        logger.error(traceback.print_exc())
         return False
     finally:
         if db_conn:
             db_conn.commit()
             db_conn.close()
-
-    return True
 
 def register_datasources(db_path: str) -> bool:
     db_conn = None
     try:
         db_conn = sqlite3.connect(db_path)
 
+        return True
     except Exception as e:
-        logger.error(f'Failed to install modules {db_path}: {e}')
+        logger.error(f'Failed to register datasources {db_path}: {e}')
+        logger.error(traceback.print_exc())
         return False
     finally:
         if db_conn:
             db_conn.commit()
             db_conn.close()
 
-    return True
-
 def perform_provisioning(deployment: DeploymentType) -> bool:
     db_path = f'{IGNITION_INSTALL_LOCATION}/data/db/config.idb'
 
     status = read_provisioning_status()
     if status != ProvisionStatus.PROVISIONED:
-        logger.info('Start provisioning')
+        logger.info('Start provisioning..')
+
+        logger.info('Register modules..')
         if not register_modules(db_path):
             return False
 
         # if not register_jdbc_driver(db_path):
         #    return False
 
+        logger.info('Register devices..')
         if not register_devices(db_path):
             return False
 
-        if not register_tagprovidier(db_path=db_path, name="Public",
+        logger.info('Register tag providers..')
+        if not register_tagprovider(db_path=db_path, name="Public",
                 uuid="ef416b7d-4dd5-4310-843a-aa9e16ff3a1d", desc="Bowery SCADA Public Tags"):
             return False
 
-        if not register_tagprovidier(db_path=db_path, name="Simulator",
+        if not register_tagprovider(db_path=db_path, name="Simulator",
                 uuid="584b5b7c-4771-4cf7-9baa-c60ab984e57c", desc="Bowery Simulator Tags For Test"):
             return False
 
