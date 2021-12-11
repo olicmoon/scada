@@ -13,6 +13,7 @@ services:
       # - ./ignition/gateway_backup.gwbk:/restore.gwbk
       - ./ignition/gateway_data:/data
       - ./ignition/modules:/modules
+      - ./ignition/config:/config
     logging:
       driver: "json-file"
       options:

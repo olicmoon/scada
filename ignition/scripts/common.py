@@ -5,7 +5,7 @@ IGNITION_UID = 999
 IGNITION_GID = 999
 IGNITION_PORT = 8088
 DATA_VOLUME_PATH = '/data'
-CONFIG_VOLUME_PATH = '/configs'
+CONFIG_VOLUME_PATH = '/config'
 PROVISION_CACHE_PATH ='data/bowery_provisioning.cache'
 
 IGNITION_VERSION = os.popen(f'cat "{IGNITION_INSTALL_LOCATION}/lib/install-info.txt" | grep gateway.version | cut -d = -f 2').read().strip()

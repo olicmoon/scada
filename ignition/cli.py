@@ -5,7 +5,7 @@ import sqlite3
 
 CURRENT_DIR = os.path.dirname(os.path.realpath(__file__))
 IGNITION_DATA_PATH = f'{CURRENT_DIR}/gateway_data'
-IGNITION_CONFIG_PATH = f'{CURRENT_DIR}/configs'
+IGNITION_CONFIG_PATH = f'{CURRENT_DIR}/config'
 IGNITION_DATABASE_PATH = f'{IGNITION_DATA_PATH}/db/config.idb'
 
 def backup_table(db_config_path: str, tbl_name: str):
