@@ -1,4 +1,4 @@
-import os, re, enum
+import os, re, enum, traceback
 import json
 
 import sqlite3
@@ -7,6 +7,7 @@ import xmltodict
 
 from common import logger, restart_ignition
 from common import IGNITION_INSTALL_LOCATION, PROVISION_CACHE_PATH, IGNITION_UID, IGNITION_GID
+from common import CONFIG_VOLUME_PATH
 
 class ProvisionStatus(enum.Enum):
     UNKNOWN = 'UNKNOWN'
@@ -131,104 +132,55 @@ def register_modules(db_path: str) -> bool:
 
     return True
 
-class DeviceType(enum.Enum):
-    OPC = 'OPC'
-    SIMULATOR = 'SimulatorDevice'
-
-class DeviceConnection:
-    def __init__(self, name: str, dtype: DeviceType, desc: str, enabled: bool, settings_tbl: str, settings: dict):
-        self.name = name
-        self.dtype = dtype
-        self.desc = desc
-        self.enabled = enabled
-        self.settings_tbl = settings_tbl
-        self.settings = settings
-
-    @staticmethod
-    def from_json(json_data: str):
-        data = json.loads(json_data)
-        return DeviceConnection(data['name'], data['type'], data['desc'], data['enabled'], data['settings_tbl'], data['settings'])
-
-    def to_json(self):
-        return {
-                'name': self.name,
-                'type': self.dtype,
-                'desc': self.desc,
-                'enabled': self.enabled,
-                'settings_tbl': self.settings_tbl,
-                'settings': self.settings
-                }
-
-simulator_device = DeviceConnection(name='Bowery SCADA Simulator',
-        dtype= DeviceType.SIMULATOR, desc='Provides simulated test environment', enabled=True,
-        settings_tbl='BOWERYSCADADEVICESETTINGS',
-        settings = [
-            { 'name': 'FARMCODE', 'type': 'varchar(4096)', 'not_null': True, 'value': 'F2' }
-            ])
-
 def register_devices(db_path: str) -> bool:
+    db_config_path = f'{CONFIG_VOLUME_PATH}/db/devices'
+    if not os.path.exists(db_config_path):
+        logger.error(f'Database configuration path not available: {db_config_path}')
+        return False
+
     db_conn = None
-    tbl = 'DEVICESETTINGS'
     try:
+        # okay to copy entire table to memory but care if we're doing this for larger table than 
+        # Ignition configs..
         db_conn = sqlite3.connect(db_path)
-        cur = db_conn.cursor()
+        for _, _, files in os.walk(db_config_path):
+            for file in files:
+                if not file.endswith('.sql'):
+                    continue
+                tbl_name = os.path.splitext(file)[0]
 
-        # check if simulator device exists
-        cur.execute(f'SELECT 1 FROM {tbl} WHERE NAME = "{simulator_device.name}"')
-        rows = cur.fetchall()
-        if len(rows) == 0:
-            logger.info(f'Inserting {simulator_device.name}')
-            cur.execute(f'SELECT COALESCE(MAX(DEVICESETTINGS_ID)+1, 11) FROM {tbl}')
-            rows = cur.fetchall()
-            next_id = rows[0][0]
-            if next_id <= 11:
-                next_id = 11
-            cur.execute(f'INSERT INTO {tbl} (DEVICESETTINGS_ID, NAME, TYPE, DESCRIPTION, ENABLED) VALUES \
-                    ({next_id}, "{simulator_device.name}", "{simulator_device.dtype}", "{simulator_device.desc}", \
-                    {simulator_device.enabled})')
-
-        cur.execute(f'SELECT DEVICESETTINGS_ID FROM {tbl} WHERE NAME = "{simulator_device.name}"')
-        rows = cur.fetchall()
-        dev_id = rows[0][0]
-
-        cur.execute('SELECT EXISTS (SELECT * FROM sqlite_master WHERE type="table" and name="{simulator_device.settings_tbl}")')
-        rows = cur.fetchall()
-        if rows[0][0] == 0:
-            logger.info(f'Creating setting table {simulator_device.settings_tbl} {simulator_device.name}')
-            create_query = f'CREATE TABLE {simulator_device.settings_tbl} (DEVICESETTINGSID NUMERIC(18,0) NOT NULL, '
-            for setting in simulator_device.settings:
-                create_query += f'{setting["name"]} {setting["type"]}'
-                if setting['not_null']:
-                    create_query += ' NOT NULL, '
-                else:
-                    create_query += ', '
-            create_query += f'PRIMARY KEY (DEVICESETTINGSID))'
-            cur.execute(create_query)
-
-            insert_query = f'INSERT INTO {simulator_device.settings_tbl} (DEVICESETTINGSID'
-            for setting in simulator_device.settings:
-                insert_query += f', {setting["name"]}'
-            insert_query += f') VALUES ({dev_id}'
-            for setting in simulator_device.settings:
-                insert_query += f', "{setting["value"]}"'
-            insert_query += ')'
-            cur.execute(insert_query)
-
+                with open(f'{db_config_path}/{file}', 'r') as fp:
+                    cur = db_conn.cursor()
+                    cur.execute(f'drop table {tbl_name}')
+                    cur.executescript(''.join(fp.readlines()))
+                    db_conn.commit()
     except Exception as e:
-        logger.error(f'Failed to install modules {db_path}: {e}')
+        logger.error(f'Failed to register devices: {e}')
+        logger.error(traceback.print_exc())
         return False
     finally:
         if db_conn:
-            db_conn.commit()
             db_conn.close()
 
-    return True
-
-def register_tagprovidiers(db_path: str) -> bool:
+def register_tagprovidier(db_path: str, name: str, uuid: str, desc: str,
+        enabled: bool = True, typeid:str = "STANDARD") -> bool:
     db_conn = None
     try:
         db_conn = sqlite3.connect(db_path)
-
+        cur = db_conn.cursor()
+        tbl = "TAGPROVIDERSETTINGS"
+        cur.execute(f'SELECT 1 FROM {tbl} WHERE NAME = "{name}"')
+        rows = cur.fetchall()
+        if len(rows) != 1:
+            logger.info('Register tag provider [Public]')
+            cur.execute(f'SELECT COALESCE(MAX(TAGPROVIDERSETTINGS_ID)+1, 2) FROM "{tbl}"')
+            rows = cur.fetchall()
+            next_id = rows[0][0]
+            cur.execute(f'INSERT INTO {tbl} \
+                    (TAGPROVIDERSETTINGS_ID, NAME, PROVIDERID, DESCRIPTION, ENABLED, TYPEID, ALLOWBACKFILL) \
+                    VALUES ({next_id}, "{name}", "{uuid}", "{desc}", {enabled}, "{typeid}", 0)')
+        else:
+            logger.info("Skip registering tag provider ${name} (already exists)")
     except Exception as e:
         logger.error(f'Failed to install modules {db_path}: {e}')
         return False
@@ -267,6 +219,14 @@ def perform_provisioning(deployment: DeploymentType) -> bool:
         #    return False
 
         if not register_devices(db_path):
+            return False
+
+        if not register_tagprovidier(db_path=db_path, name="Public",
+                uuid="ef416b7d-4dd5-4310-843a-aa9e16ff3a1d", desc="Bowery SCADA Public Tags"):
+            return False
+
+        if not register_tagprovidier(db_path=db_path, name="Simulator",
+                uuid="584b5b7c-4771-4cf7-9baa-c60ab984e57c", desc="Bowery Simulator Tags For Test"):
             return False
 
         # Restart ignition gateway to apply changes

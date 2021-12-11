@@ -133,7 +133,7 @@ RUN mkdir ${IGNITION_INSTALL_USERHOME} && \
 RUN mkdir /scripts && \
     chown ${IGNITION_UID}:${IGNITION_GID} /scripts
 
-COPY requirements.txt /scripts
+COPY /scripts/requirements.txt /scripts
 RUN pip install -r /scripts/requirements.txt
 
 
