@@ -102,7 +102,7 @@ def perform_commissioning(auth_password: str,
     logger.info(f'bootstrap: {r.text}')
     edition = body['edition']
     if edition == 'NOT_SET':
-        logger.info('perform commissioning.. edution selection')
+        logger.info('perform commissioning.. edition selection')
         edition_selection_payload = {
                 'id':'edition',
                 'step':'edition',

@@ -15,33 +15,26 @@ IGNITION_PORT = 8088
 
 PROVISION_CACHE = f'{IGNITION_DATA_PATH}/bowery_provisioning.cache'
 
-def health_check(desc: str, target: Tuple[str, Optional[str]],
-        giveup: Optional[Tuple[str, Optional[str]]],
-        delay: int = 5) -> bool:
+def gateway_ping(delay: int = 5) -> Optional[Tuple[str, Optional[str]]]:
     url = f'http://localhost:{IGNITION_PORT}/StatusPing'
     tn = time.time() + delay
-    curr: Tuple[Optional[str], Optional[str]] = (None, None)
     while time.time() < tn:
         try:
             r = requests.get(url)
             if r.status_code == 200:
                 msg = json.loads(r.text)
-                state = msg['state']
+                state = None
                 details = None
+                if 'state' in msg:
+                    state = msg['state']
                 if 'details' in msg:
                     details = msg['details']
-                curr = (state, details)
-
-                if curr == target:
-                    return True
-
-                if giveup is not None and curr == giveup:
-                    return False
+                return (state, details)
         except:
             pass
         time.sleep(1)
 
-    return False
+    return (None, None)
 
 def read_provisioning_status():
     if os.path.exists(PROVISION_CACHE):
@@ -197,6 +190,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-b', '--backup', nargs=1, type=str, choices=('device', 'datasource'), help='backup Ignition configs')
     parser.add_argument('-w', '--wait', action='store_true', help='wait until provisioning Ignition')
+    parser.add_argument('-s', '--status', action='store_true', help='print Ignition status')
     args = parser.parse_args()
 
     if args.backup:
@@ -217,8 +211,8 @@ if __name__ == "__main__":
         result = False
         cnt = 0
         while cnt < 5:
-            check = health_check(desc='wait provisioning', target= ('RUNNING', None), giveup = None)
-            if check:
+            res = gateway_ping()
+            if ('RUNNING', None) == res:
                 cnt += 1
                 print('-', end='', flush=True)
             else:
@@ -228,3 +222,10 @@ if __name__ == "__main__":
             time.sleep(1)
 
         print('Ignition is ready..')
+
+    if args.status:
+        res = gateway_ping()
+        print(f'Provisioning status: {read_provisioning_status()}')
+        print(f'     Gateway status: {res[0]} (details:{res[1]})')
+
+
