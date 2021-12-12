@@ -6,7 +6,7 @@ import shutil
 import xmltodict
 
 from common import logger, restart_ignition
-from common import IGNITION_INSTALL_LOCATION, PROVISION_CACHE_PATH, IGNITION_UID, IGNITION_GID
+from common import IGNITION_INSTALL_LOCATION, PROVISION_CACHE, IGNITION_UID, IGNITION_GID
 from common import CONFIG_VOLUME_PATH
 
 class ProvisionStatus(enum.Enum):
@@ -23,7 +23,7 @@ def store_provision_cache(deployment: DeploymentType, status: ProvisionStatus):
     cache['deployment'] = deployment.value
     cache['status'] = status.value
 
-    cache_file = f'{IGNITION_INSTALL_LOCATION}/{PROVISION_CACHE_PATH}'
+    cache_file = f'{IGNITION_INSTALL_LOCATION}/data/{PROVISION_CACHE}'
     if os.path.exists(cache_file):
         os.remove(cache_file)
 
@@ -32,7 +32,7 @@ def store_provision_cache(deployment: DeploymentType, status: ProvisionStatus):
         fp.flush()
 
 def read_provisioning_status() -> ProvisionStatus:
-    cache_file = f'{IGNITION_INSTALL_LOCATION}/{PROVISION_CACHE_PATH}'
+    cache_file = f'{IGNITION_INSTALL_LOCATION}/data/{PROVISION_CACHE}'
     if os.path.exists(cache_file):
         with open(cache_file, 'r') as fp:
             cache = json.load(fp)
@@ -177,7 +177,7 @@ def register_tagprovider(db_path: str, name: str, uuid: str, desc: str,
         cur.execute(f'SELECT 1 FROM {tbl} WHERE NAME = "{name}"')
         rows = cur.fetchall()
         if len(rows) != 1:
-            logger.info('Register tag provider [Public]')
+            logger.info(f'Register tag provider [{name}]')
             cur.execute(f'SELECT COALESCE(MAX(TAGPROVIDERSETTINGS_ID)+1, 2) FROM "{tbl}"')
             rows = cur.fetchall()
             next_id = rows[0][0]

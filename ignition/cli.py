@@ -1,12 +1,56 @@
-import os, traceback
+import os, sys, time, json, traceback
+from typing import Optional, Tuple
 
+import shutil
 import argparse
 import sqlite3
+import requests
 
 CURRENT_DIR = os.path.dirname(os.path.realpath(__file__))
 IGNITION_DATA_PATH = f'{CURRENT_DIR}/gateway_data'
 IGNITION_CONFIG_PATH = f'{CURRENT_DIR}/config'
 IGNITION_DATABASE_PATH = f'{IGNITION_DATA_PATH}/db/config.idb'
+
+IGNITION_PORT = 8088
+
+PROVISION_CACHE = f'{IGNITION_DATA_PATH}/bowery_provisioning.cache'
+
+def health_check(desc: str, target: Tuple[str, Optional[str]],
+        giveup: Optional[Tuple[str, Optional[str]]],
+        delay: int = 5) -> bool:
+    url = f'http://localhost:{IGNITION_PORT}/StatusPing'
+    tn = time.time() + delay
+    curr: Tuple[Optional[str], Optional[str]] = (None, None)
+    while time.time() < tn:
+        try:
+            r = requests.get(url)
+            if r.status_code == 200:
+                msg = json.loads(r.text)
+                state = msg['state']
+                details = None
+                if 'details' in msg:
+                    details = msg['details']
+                curr = (state, details)
+
+                if curr == target:
+                    return True
+
+                if giveup is not None and curr == giveup:
+                    return False
+        except:
+            pass
+        time.sleep(1)
+
+    return False
+
+def read_provisioning_status():
+    if os.path.exists(PROVISION_CACHE):
+        with open(PROVISION_CACHE, 'r') as fp:
+            cache = json.load(fp)
+            if 'status' in cache:
+                return cache['status']
+
+    return 'NOT_PROVISIONED'
 
 def backup_table(db_config_path: str, tbl_name: str):
     db_conn = None
@@ -34,7 +78,7 @@ def backup_table(db_config_path: str, tbl_name: str):
         return True
     
     except Exception as e:
-        print(f'Failed to dump table : {IGNITION_DATABASE_PATH} {e}')
+        print(f'Failed to dump table : {e}')
         print(traceback.print_exc())
         return False
     finally:
@@ -73,6 +117,11 @@ def backup_device_configs():
     db_conn = None
     db_config_path = f'{IGNITION_CONFIG_PATH}/db/devices'
 
+    if os.path.exists(db_config_path):
+        shutil.rmtree(db_config_path)
+
+    os.mkdir(db_config_path)
+
     try:
         # okay to copy entire table to memory but care if we're doing this for larger table than 
         # Ignition configs..
@@ -95,13 +144,16 @@ def backup_device_configs():
             backup_table(db_config_path, tbl)
 
     except Exception as e:
-        print(f'Failed to dump table : {IGNITION_DATABASE_PATH} {e}')
+        print(f'Failed to backup table : {e}')
         print(traceback.print_exc())
         return False
     finally:
         if db_conn:
             db_conn.commit()
             db_conn.close()
+
+def backup_datasource_configs():
+    raise NotImplementedError('Not implemented datasource configs')
 
 def restore_tables(db_config_path: str):
     db_conn = None
@@ -126,7 +178,7 @@ def restore_tables(db_config_path: str):
                     db_conn.commit()
     
     except Exception as e:
-        print(f'Failed to dump table : {IGNITION_DATABASE_PATH} {e}')
+        print(f'Failed to dump table : {e}')
         print(traceback.print_exc())
         return False
     finally:
@@ -138,18 +190,41 @@ def restore_tables(db_config_path: str):
 def restore_device_configs():
     restore_tables(db_config_path=f'{IGNITION_CONFIG_PATH}/db/devices')
 
+def restore_datasource_configs():
+    raise NotImplementedError('Not implemented datasource configs')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-b', '--backup', nargs=1, type=str, choices=('device', 'datasource'), help='backup Ignition configs')
+    parser.add_argument('-w', '--wait', action='store_true', help='wait until provisioning Ignition')
     args = parser.parse_args()
 
-    print(vars(args))
-    if 'device' in args.backup:
-        print('Start backup device configuration..')
-        backup_device_configs()
+    if args.backup:
+        if 'device' in args.backup:
+            print('Start backup device configuration..')
+            backup_device_configs()
 
-    if 'datasource' in args.backup:
-        print('Start backup datasource configuration..')
-        print('Backup datasource configs')
+        if 'datasource' in args.backup:
+            print('Start backup datasource configuration..')
+            backup_datasource_configs()
 
+    if args.wait:
+        print('Waiting for Ignition..')
+        while read_provisioning_status() != 'PROVISIONED':
+            time.sleep(1)
+
+        print('Ignition is provisioned..')
+        result = False
+        cnt = 0
+        while cnt < 5:
+            check = health_check(desc='wait provisioning', target= ('RUNNING', None), giveup = None)
+            if check:
+                cnt += 1
+                print('-', end='', flush=True)
+            else:
+                cnt = 0
+                print('_', end='', flush=True)
+            sys.stdout.flush()
+            time.sleep(1)
+
+        print('Ignition is ready..')
